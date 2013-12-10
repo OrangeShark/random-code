@@ -9,41 +9,31 @@ function QuadTree(bbox) {
     NE: null,
     SW: null,
     SE: null
-  }
+  };
   this.bbox = bbox;
   this.points = [];
 }
 
 QuadTree.prototype.CAPACITY = 4;
 
-QuadTree.prototype.insert = function( point ) {
-  if( !this.bbox.containsPoint(point.key) ) {
+QuadTree.prototype.insert = function(point) {
+  if (!this.bbox.containsPoint(point.key)) {
     return false;
   }
 
-  if( this.quad.NW === null ) {
-    if( this.points.length < this.CAPACITY ) {
-      this.points.push(point);
-      return true;
-    } else {
-      this.subdivide();
+  if (this.points.length < this.CAPACITY) {
+    this.points.push(point);
+    return true;
+  } 
 
-      for( var i = 0; i < this.points.length; i++) {
-        var p = this.points[i];
-        this.quad.NW.insert(p);
-        this.quad.NE.insert(p);
-        this.quad.SW.insert(p);
-        this.quad.SE.insert(p);
-      }
-      this.points = [];
-
-    }
+  if (this.quad.NW === null){
+    this.subdivide();
   }
 
-  if(this.quad.NW.insert(point) ) return true;
-  if(this.quad.NE.insert(point) ) return true;
-  if(this.quad.SW.insert(point) ) return true;
-  if(this.quad.SE.insert(point) ) return true;
+  if (this.quad.NW.insert(point)) return true;
+  if (this.quad.NE.insert(point)) return true;
+  if (this.quad.SW.insert(point)) return true;
+  if (this.quad.SE.insert(point)) return true;
 
   return false;
 };
@@ -57,22 +47,30 @@ QuadTree.prototype.subdivide = function() {
   this.quad.NE = new QuadTree(new BBox([center[0], this.bbox.tl[1]], [this.bbox.br[0], center[1]]));
   this.quad.SW = new QuadTree(new BBox([this.bbox.tl[0], center[1] ] , [ center[0], this.bbox.br[1] ]));
   this.quad.SE = new QuadTree(new BBox(center, this.bbox.br));
+
+  for (var i = 0; i < this.points.length; i++) {
+    var p = this.points[i];
+    this.quad.NW.insert(p);
+    this.quad.NE.insert(p);
+    this.quad.SW.insert(p);
+    this.quad.SE.insert(p);
+  }
 };
 
 QuadTree.prototype.queryRange = function(range) {
   var results = [];
 
-  if( !this.bbox.intersectBBox(range) ) {
+  if (!this.bbox.intersectBBox(range)) {
     return results;
   }
 
-  for( var i = 0; i < this.points.length; i++ ) {
-    if( range.containsPoint(this.points[i].key) ) {
+  for (var i = 0; i < this.points.length; i++) {
+    if (range.containsPoint(this.points[i].key)) {
       results.push(this.points[i]);
     }
   }
 
-  if( this.quad.NW == null ) {
+  if (this.quad.NW == null) {
     return results;
   }
 
@@ -90,8 +88,8 @@ function BBox(tl, br) {
 };
 
 BBox.prototype.containsPoint = function( point ) {
-  if( point[0] >= this.tl[0] && point[0] <= this.br[0] ) {
-    if( point[1] <= this.tl[1] && point[1] >= this.br[1] ) {
+  if (point[0] >= this.tl[0] && point[0] <= this.br[0]) {
+    if (point[1] <= this.tl[1] && point[1] >= this.br[1]) {
       return true;
     }
   }
