@@ -3,6 +3,33 @@
  * Based off of http://en.wikipedia.org/wiki/Quadtree
  */
 
+function Point(coord, data)
+{
+  this.key = coord;
+  this.data = data;
+}
+
+function BBox(tl, br) {
+  this.tl = tl;
+  this.br = br;
+};
+
+BBox.prototype.containsPoint = function( point ) {
+  if (point[0] >= this.tl[0] && point[0] <= this.br[0]) {
+    if (point[1] <= this.tl[1] && point[1] >= this.br[1]) {
+      return true;
+    }
+  }
+  return false;
+};
+
+BBox.prototype.intersectBBox = function( other ) {
+  return (!( this.br[0] < other.tl[0] ||
+        this.tl[0] > other.br[0] ||
+        this.br[1] > other.tl[1] ||
+        this.tl[1] < other.br[1]));
+};
+
 function QuadTree(bbox) {
   this.quad = {
     NW: null,
@@ -21,7 +48,7 @@ QuadTree.prototype.insert = function(point) {
     return false;
   }
 
-  if (this.points.length < this.CAPACITY) {
+  if (this.points !== null && this.points.length < this.CAPACITY) {
     this.points.push(point);
     return true;
   } 
@@ -55,6 +82,8 @@ QuadTree.prototype.subdivide = function() {
     this.quad.SW.insert(p);
     this.quad.SE.insert(p);
   }
+
+  this.points = null;
 };
 
 QuadTree.prototype.queryRange = function(range) {
@@ -64,13 +93,12 @@ QuadTree.prototype.queryRange = function(range) {
     return results;
   }
 
-  for (var i = 0; i < this.points.length; i++) {
-    if (range.containsPoint(this.points[i].key)) {
-      results.push(this.points[i]);
-    }
-  }
-
   if (this.quad.NW == null) {
+    for (var i = 0; i < this.points.length; i++) {
+      if (range.containsPoint(this.points[i].key)) {
+        results.push(this.points[i]);
+      }
+    }
     return results;
   }
 
@@ -82,23 +110,4 @@ QuadTree.prototype.queryRange = function(range) {
   return results;
 };
 
-function BBox(tl, br) {
-  this.tl = tl;
-  this.br = br;
-};
 
-BBox.prototype.containsPoint = function( point ) {
-  if (point[0] >= this.tl[0] && point[0] <= this.br[0]) {
-    if (point[1] <= this.tl[1] && point[1] >= this.br[1]) {
-      return true;
-    }
-  }
-  return false;
-};
-
-BBox.prototype.intersectBBox = function( other ) {
-  return (!( this.br[0] < other.tl[0] ||
-        this.tl[0] > other.br[0] ||
-        this.br[1] > other.tl[1] ||
-        this.tl[1] < other.br[1]));
-};
