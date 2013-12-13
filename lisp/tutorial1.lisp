@@ -41,12 +41,12 @@
 
 ;;
 ;; Computer the power of a number
-;; P(b,e) = b             if e = 1
-;; P(b,e) = b * P(b,e-1)  if e > 1
+;; P(b,e) = b             if e = 0
+;; P(b,e) = b * P(b,e-1)  if e >= 1
 ;;
 
 (defun power (B E)
   "Compute the power of B to the E."
-  (if (= E 1)
-    B
+  (if (= E 0)
+    1
     (* B (power B (- E 1)))))
