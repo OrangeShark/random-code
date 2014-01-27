@@ -203,7 +203,7 @@ class Parser(object):
 
       # If binary_operator binds less tightly with right than the operator after
       # right, let the pending operator take right as its left.
-      next_precedence = self.GetCurrentTokenprecedence()
+      next_precedence = self.GetCurrentTokenPrecedence()
       if precedence < next_precedence:
         right = self.ParseBinOpRHS(right, precedence + 1)
 
@@ -268,7 +268,7 @@ class Parser(object):
     except Exception as e:
       print('Error:', e)
       try:
-        self.next() # Skip for error recovery.
+        self.Next() # Skip for error recovery.
       except:
         pass
 
@@ -285,16 +285,15 @@ def main():
 
   # Run the main "interpreter loop".
   while True:
-    print('ready>')
     try:
-      raw = input()
+      raw = input('ready> ')
     except KeyboardInterrupt:
       return
 
     parser = Parser(Tokenize(raw), operator_precedence)
     while True:
       # top ::= definition | external | expression | EOF
-      if isinstance(parser.current, DefToken):
+      if isinstance(parser.current, EOFToken):
         break
       if isinstance(parser.current, DefToken):
         parser.HandleDefinition()
