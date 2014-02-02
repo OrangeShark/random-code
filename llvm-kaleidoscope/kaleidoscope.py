@@ -1,4 +1,15 @@
 import re
+from llvm.core import Module, Constant, Type, Function, Builder, FCMP_ULT
+
+# Globals
+# The LLVM module, which holds all the IR code.
+g_llvm_module = Module.new('my cool jit')
+
+# The LLVM instruction builder. Created whenever a new function is entered.
+g_llvm_builder = None
+
+# A dictionary of current scope
+g_named_values = {}
 
 # Lexer
 class EOFToken(object):
@@ -75,10 +86,19 @@ class NumberExpressionNode(ExpressionNode):
   def __init__(self, value):
     self.value = value
 
+  def CodeGen(self):
+    return Constant.real(Type.double(), self.value)
+
 # Expression class for referencing a variable, like "a"
 class VariableExpressionNode(ExpressionNode):
   def __init__(self, name):
     self.name = name
+
+  def CodeGen(self):
+    if self.name in g_named_values:
+      return g_named_values[self.name]
+    else:
+      raise RuntimeError('Unknown variable name: ' + self.name)
 
 # Expression class for a binary operator.
 class BinaryOperatorExpressionNode(ExpressionNode):
@@ -87,11 +107,40 @@ class BinaryOperatorExpressionNode(ExpressionNode):
     self.left = left
     self.right = right
 
+  def CodeGen(self):
+    left = self.left.CodeGen()
+    right = self.right.CodeGen()
+
+    if self.operator == '+':
+      return g_llvm_builder.fadd(left, right, 'addtmp')
+    elif self.operator == '-':
+      return g_llvm_builder.fsub(left, right, 'subtmp')
+    elif self.operator == '*':
+      return g_llvmbuilder.fmul(left, right, 'multmp')
+    elif self.operator == '<':
+      result = g_llvm_builder.fcmp(FCMP_ULT, left, right, 'cmptmp')
+      #Convert bool 0 or 1 to double 0.0 or 1.0
+      return g_llvm_builder.uitofp(result, Type.double(), 'booltmp')
+    else:
+      raise RuntimeError('Unknown binary operator.')
+
 # Expression class for function calls.
 class CallExpressionNode(ExpressionNode):
   def __init__(self, callee, args):
     self.callee = callee
     self.args = args
+
+  def CodeGen(self):
+    # Look up the name in the global module table.
+    callee = g_llvm_module.get_function_named(self.callee)
+
+    # Check for argument mismatch error.
+    if len(callee.args) != len(self.args):
+      raise RuntimeError('Incorrect number of arguments passed.')
+
+    arg_values = [i.CodeGen() for i in self.args]
+
+    return g_llvm_builder.call(callee, arg_values, 'calltmp')
 
 # This class repersents the "prototype" for a function, which captures its name,
 # and its argument names (thus implicitly the number of arguments the function
@@ -101,11 +150,66 @@ class PrototypeNode(object):
     self.name = name
     self.args = args
 
+  def CodeGen(self):
+    # Make the function type, eg. double(double, double).
+    funct_type = Type.function(
+        Type.double(), [Type.double()] * len(self.args), False)
+
+    function = Function.new(g_llvm_module, funct_type, self.name)
+
+    # If the name conflicted, there was already something with the same name.
+    # If it has a body, don't allow redefinition or reextern.
+    if function.name != self.name:
+      function.delete()
+      function = g_llvm_module.get_function_named(self.name)
+
+    # If the function already has a body, reject this.
+    if not function.is_declaration:
+      raise RuntimeError('Redefinition of function.')
+
+    # If F took a different number of args, reject.
+    if len(callee.args) != len(self.args):
+      raise RuntimeError('Redeclaration of a function with a different number of args.')
+
+    # Set names for all arguments and add them to the variables symbol table.
+    for arg, arg_name in zip(function.args, self.args):
+      arg.name = arg_name
+      # Add arguments to variable symbol table.
+      g_named_values[arg_name] = arg
+
+    return function
+
 # This class represents a function definition itself.
 class FunctionNode(object):
   def __init__(self, prototype, body):
     self.prototype = prototype
     self.body = body
+
+  def CodeGen(self):
+    # Clear scope.
+    g_named_values.clear()
+
+    # Create a function object.
+    function = self.prototype.CodeGen()
+
+    # Create a new basic block to start insertion into.
+    block = function.append_basic_block('entry')
+    global g_llvm_builder
+    g_llvm_builder = Builder.new(block)
+
+    # Finish off the function.
+    try:
+      return_value  = self.body.CodeGen()
+      g_llvm_builder.ret(return_value)
+
+      # Validate the generated code, checking for consistency.
+      function.verify()
+
+    except:
+      function.delete()
+      raise
+
+    return function
 
 class Parser(object):
   def __init__(self, tokens, binop_precedence):
