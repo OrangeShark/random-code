@@ -28,7 +28,7 @@
     (* N (factorial (- N 1)))))
 
 ;;
-;; The N'th trianglular number
+;; The N'th triangular number
 ;; T(n) = 1           if n = 1
 ;; T(n) = n + T(n-1)  if n > 1
 ;;
