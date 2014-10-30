@@ -7,6 +7,7 @@
 ;; Multiplicative <- Primary MultiSuffix
 ;; MultiSuffix    <- '*' Primary MultiSuffix
 ;;                 / '/' Primary MultiSuffix
+;;                 / ()
 ;; Primary        <- '(' Additive ')'
 ;;                 / Decimal
 ;; Decimal        <- '0' | ... | '9'
@@ -58,7 +59,67 @@
       ((#\7) (make-parsed 7 rest))
       ((#\8) (make-parsed 8 rest))
       ((#\9) (make-parsed 9 rest))
-      (else (make-no-parse)))))
+      (else (make-no-parse))))) ; not a valid decimal character
 
+;; Primary <- '(' Additive ')'
+;;          / Decimal
+;; primary : list-of-characters -> result
 (define (primary cs)
-  #f)
+  (case (car cs)
+    ;; match '(' and call additive
+    ((#\() (let ((result (additive (cdr cs))))
+             ;; Additive match?
+             (cond ((parsed? result)
+                    (let ((rest (parsed-rest result)))
+                      (case (car rest)
+                        ;; match ')'
+                        ((#\)) (make-parsed (parsed-value result)
+                                            (cdr rest)))
+                        ;; failed to match ')'
+                        (else (make-no-parse)))))
+                   ;; failed to match Additive
+                   (else (make-no-parse)))))
+    ;; match decimal
+    (else (decimal cs))))
+
+;; MultiSuffix <- '*' Primary MultiSuffix
+;;              / '/' Primary MultiSuffix
+;; multi-suffix : list-of-characters -> result
+(define (multi-suffix cs)
+  (case (car cs)
+    ;; match '*' and call primary
+    ((#\*) (let ((result-right (primary (cdr cs))))
+             ;; Primary match? and call multi-suffix
+             (cond ((parsed? result-right)
+                    (let ((result-stuff (multi-suffix (parsed-rest result-right))))
+                      ;; MultiSuffix match?
+                      (cond ((parsed? result-stuff)
+                             (let ((vright (parsed-value result-right))
+                                   (vstuff (parsed-value result-stuff)))
+                               ;; return a lambda of results
+                               (make-parsed (lambda (vleft)
+                                              (vstuff (* vleft vright)))
+                                            (parsed-rest result-stuff))))
+                            ;; failed to match MultiSuffix
+                            (else (make-no-parse)))))
+                   ;; failed to match Primary
+                   (else (make-no-parse)))))
+    ;; match '/' and call primary
+    ((#\/) (let ((result-right (primary (cdr cs))))
+             ;; Primary matched?
+             (cond ((parsed? result-right)
+                    (let ((result-stuff (multi-suffix (parsed-rest result-right))))
+                      ;; MultiSuffix matched?
+                      (cond ((parsed? result-stuff)
+                             (let ((vright (parsed-value result-right))
+                                   (vstuff (parsed-value result-stuff)))
+                               ;; return a lambda of results
+                               (make-parsed (lambda (vleft)
+                                              (vstuff (/ vleft vright)))
+                                            (parsed-rest result-stuff))))
+                            ;; failed to match MultiSuffix
+                            (else (make-no-parse)))))
+                   ;; failed to match Primary
+                   (else (make-no-parse)))))
+     ;; identity function v -> v
+    (else (make-parsed identity cs))))
