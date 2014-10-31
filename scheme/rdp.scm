@@ -212,3 +212,10 @@
                    (else (make-no-parse)))))
           ;; failed to match Multiplicative
           (else (make-no-parse)))))
+
+(define (parse-expr input)
+  (let ((result (additive (string->list input))))
+    (if (parsed? result)
+        (display (parsed-value result))
+        (display "Bad input")))
+  (newline))
