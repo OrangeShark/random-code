@@ -11,42 +11,26 @@
 ;; Primary        <- '(' Additive ')'
 ;;                 / Decimal
 ;; Decimal        <- '0' | ... | '9'
-(use-modules ((ice-9 match)))
+(use-modules ((ice-9 match))
+             (srfi srfi-9)
+             (srfi srfi-26))
 
-;; Type representing a parsed input
-;; value is a number and rest-of-characters is a list of characters
-(define (make-parsed value rest-of-characters)
-  (vector 'parsed value rest-of-characters))
+(define-record-type parsed
+  (make-parsed value rest)
+  parsed?
+  (value parsed-value)
+  (rest  parsed-rest))
+;; Parsed is (make-parsed Number (listof Character))
+;; interp. the current value and the rest of characters
 
-(define (parsed? obj)
-  (and (vector? obj)
-       (eq? (vector-ref obj 0) 'parsed)))
+;; Result is one of:
+;;  - Parsed
+;;  - false
+;; interp. Parsed is a parsed input and false means no value
 
-(define (parsed-value obj)
-  (if (parsed? obj)
-      (vector-ref obj 1)
-      (error "not a parsed object")))
-
-(define (parsed-rest obj)
-  (if (parsed? obj)
-      (vector-ref obj 2)
-      (error "not a parsed object")))
-
-;; Type representing no parsed input
-(define (make-no-parse)
-  (vector 'no-parse))
-
-(define (no-parse? obj)
-  (and (vector? obj)
-       (eq? (vector-ref obj 0) 'no-parse)))
-
-;; result type is either a parsed or no-parse
-(define (result? obj)
-  (or (parsed? obj)
-      (no-parse? obj)))
 
 ;; Decimal <- '0' | ... | '9'
-;; decimal : list-of-characters -> result
+;; decimal : (listof Character) -> Result
 (define (decimal cs)
   (match cs
          ((#\0 . rest) (make-parsed 0 rest))
@@ -59,7 +43,7 @@
          ((#\7 . rest) (make-parsed 7 rest))
          ((#\8 . rest) (make-parsed 8 rest))
          ((#\9 . rest) (make-parsed 9 rest))
-         (_ (make-no-parse)))) ; not a valid decimal character
+         (_ #f))) ; not a valid decimal character
 
 ;; Primary <- '(' Additive ')'
 ;;          / Decimal
@@ -78,9 +62,9 @@
                           (make-parsed (parsed-value result)
                                        cs''))
                          ;; failed to match ')'
-                         (_ (make-no-parse))))
+                         (_ #f)))
                 ;; failed to match Additive
-                (make-no-parse))))
+                #f)))
           ;; match decimal
           (_ (decimal cs))))
 
@@ -105,9 +89,9 @@
                                        (vstuff (* vleft vright)))
                                      (parsed-rest result-stuff)))
                       ;; failed to match MultiSuffix
-                      (make-no-parse)))
+                      #f))
                 ;; failed to match Primary
-                (make-no-parse))))
+                #f)))
          ;; match '/' and call primary
          ((#\/ . cs') 
           (let ((result-right (primary cs')))
@@ -123,9 +107,9 @@
                                        (vstuff (/ vleft vright)))
                                      (parsed-rest result-stuff)))
                       ;; failed to match MultiSuffix
-                      (make-no-parse)))
+                      #f))
                 ;; failed to match Primary
-                (make-no-parse))))
+                #f)))
          ;; identity function v -> v
          (_ (make-parsed identity cs))))
 
@@ -145,9 +129,9 @@
                       ;; apply multi-suffix value to primary value
                       (make-parsed (vstuff vleft) vrest)))
                    ;; failed to match multi-suffix
-                   (else (make-no-parse)))))
+                   (else #f))))
           ;; failed to match primary
-          (else (make-no-parse)))))
+          (else #f))))
 
 ;; AdditiveSuffix <- '+' Multiplicative AdditiveSuffix
 ;;                 / '-' Multiplicative AdditiveSuffix
@@ -169,9 +153,9 @@
                                              (vstuff (+ vleft vright)))
                                            (parsed-rest result-stuff))))
                            ;; failed to match AdditiveSuffix
-                           (else (make-no-parse)))))
+                           (else #f))))
                   ;; failed to match Multiplicative
-                  (else (make-no-parse)))))
+                  (else #f))))
          ;; match '-' and call multi
          ((#\- . cs') 
           (let ((result-right (multi cs')))
@@ -187,9 +171,9 @@
                                              (vstuff (- vleft vright)))
                                            (parsed-rest result-stuff))))
                            ;; failed to match AdditiveSuffix
-                           (else (make-no-parse)))))
+                           (else #f))))
                   ;; failed to match Multiplicative
-                  (else (make-no-parse)))))
+                  (else #f))))
          ;; identity function v -> v
          (_ (make-parsed identity cs))))
 
@@ -209,13 +193,13 @@
                       ;; apply add-suffix value to primary value
                       (make-parsed (vstuff vleft) vrest)))
                    ;; failed to match AdditiveSuffix
-                   (else (make-no-parse)))))
+                   (else #f))))
           ;; failed to match Multiplicative
-          (else (make-no-parse)))))
+          (else #f))))
 
 (define (parse-expr input)
   (let ((result (additive (string->list input))))
-    (if (parsed? result)
-        (display (parsed-value result))
-        (display "Bad input")))
+    (cond [(parsed? result)
+           (display (parsed-value result))]
+          [else (display "Bad input")]))
   (newline))
