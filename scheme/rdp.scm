@@ -28,6 +28,12 @@
 ;;  - false
 ;; interp. Parsed is a parsed input and false means no value
 
+#;
+(define (fn-for-result r)
+  (cond [(parsed? r) (... (parsed-value r) 
+                          (parsed-rest r))]
+        [else (...)]))
+
 
 ;; Decimal <- '0' | ... | '9'
 ;; decimal : (listof Character) -> Result
@@ -177,25 +183,22 @@
          ;; identity function v -> v
          (_ (make-parsed identity cs))))
 
-;; Additive       <- Multiplicative AdditiveSuffix
-(define (additive cs)
-  ;; call multi
-  (let ((result (multi cs)))
-    ;; Multiplicative match?
-    (cond ((parsed? result)
-           ;; call add-suffix
-           (let ((result' (add-suffix (parsed-rest result))))
-             ;; AdditivieSuffix match?
-             (cond ((parsed? result')
-                    (let ((vleft (parsed-value result))
-                          (vstuff (parsed-value result'))
-                          (vrest (parsed-rest result')))
-                      ;; apply add-suffix value to primary value
-                      (make-parsed (vstuff vleft) vrest)))
-                   ;; failed to match AdditiveSuffix
-                   (else #f))))
-          ;; failed to match Multiplicative
-          (else #f))))
+;; (listof Character) -> Result
+;; combines a Multiplicative and AdditiveSuffix
+;; Additive <- Multiplicative AdditiveSuffix
+
+(define (additive loc)
+  (define (combine v r)
+    (cond [(parsed? r)
+           (make-parsed ((parsed-value r) v)
+                        (parsed-rest r))]
+          [else #f]))
+  (define (call-add-suffix r)
+    (cond [(parsed? r) 
+           (combine (parsed-value r) 
+                    (add-suffix (parsed-rest r)))]
+          [else #f]))
+  (call-add-suffix (multi loc)))
 
 (define (parse-expr input)
   (let ((result (additive (string->list input))))
