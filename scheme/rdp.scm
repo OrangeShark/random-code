@@ -84,7 +84,7 @@
   (define (match-end p)
     (match (parsed-rest p)
       [(#\) . loc') (successful-parsed (parsed-value p)
-                                (cdr (parsed-rest p)))]
+                                       (cdr (parsed-rest p)))]
       [_  (make-failure "Failed to match )")]))
   (define (match-rest loc)
     (>>= (additive loc)
