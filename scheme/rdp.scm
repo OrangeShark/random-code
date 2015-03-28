@@ -15,7 +15,7 @@
              (srfi srfi-9)
              (srfi srfi-26))
 
-(define-record-type parsed
+(define-record-type <parsed>
   (make-parsed value rest)
   parsed?
   (value parsed-value)
@@ -23,186 +23,144 @@
 ;; Parsed is (make-parsed Number (listof Character))
 ;; interp. the current value and the rest of characters
 
+(define-record-type <success>
+  (make-success value)
+  success?
+  (value success-value))
+;; Success is (make-success 'a)
+;; interp. a successful result of type 'a
+
+(define-record-type <failure>
+  (make-failure value)
+  failure?
+  (value failure-value))
+;; Failure is (make-failure 'a)
+;; interp. a failed result of type 'a
+
 ;; Result is one of:
-;;  - Parsed
-;;  - false
-;; interp. Parsed is a parsed input and false means no value
+;;  - (Success 'a)
+;;  - (Failure 'b)
+;; interp. Success is a successful result with value 'a and
+;;         Failure is a failed result with value 'b
 
 #;
 (define (fn-for-result r)
-  (cond [(parsed? r) (... (parsed-value r) 
-                          (parsed-rest r))]
-        [else (...)]))
+  (cond [(success? r) (... (success-value r))]
+        [else         (... (failure-value r))]))
+
+;; Result<'a> ('a -> Result<'b>) -> Result<'b>
+(define (>>= r fn)
+  (cond [(success? r) (fn (success-value r))]
+        [else         r]))
 
 
-;; Decimal <- '0' | ... | '9'
-;; decimal : (listof Character) -> Result
+
+(define (successful-parsed v rest)
+  (make-success (make-parsed v rest)))
+
+  ;; Decimal <- '0' | ... | '9'
+  ;; decimal : (listof Character) -> Result
+
 (define (decimal cs)
   (match cs
-         ((#\0 . rest) (make-parsed 0 rest))
-         ((#\1 . rest) (make-parsed 1 rest))
-         ((#\2 . rest) (make-parsed 2 rest))
-         ((#\3 . rest) (make-parsed 3 rest))
-         ((#\4 . rest) (make-parsed 4 rest))
-         ((#\5 . rest) (make-parsed 5 rest))
-         ((#\6 . rest) (make-parsed 6 rest))
-         ((#\7 . rest) (make-parsed 7 rest))
-         ((#\8 . rest) (make-parsed 8 rest))
-         ((#\9 . rest) (make-parsed 9 rest))
-         (_ #f))) ; not a valid decimal character
+    ((#\0 . rest) (successful-parsed 0 rest))
+    ((#\1 . rest) (successful-parsed 1 rest))
+    ((#\2 . rest) (successful-parsed 2 rest))
+    ((#\3 . rest) (successful-parsed 3 rest))
+    ((#\4 . rest) (successful-parsed 4 rest))
+    ((#\5 . rest) (successful-parsed 5 rest))
+    ((#\6 . rest) (successful-parsed 6 rest))
+    ((#\7 . rest) (successful-parsed 7 rest))
+    ((#\8 . rest) (successful-parsed 8 rest))
+    ((#\9 . rest) (successful-parsed 9 rest))
+    (_ (make-failure "expecting a decimal")))) ; not a valid decimal character
 
+
+;; (listof Character) -> Result
 ;; Primary <- '(' Additive ')'
 ;;          / Decimal
-;; primary : list-of-characters -> result
-(define (primary cs)
-  (match cs
-         ;; match '(' and call additive
-         ((#\( . cs')
-          (let ((result (additive cs')))
-            ;; Additive match?
-            (if (parsed? result)
-                (let ((rest (parsed-rest result)))
-                  (match rest
-                         ;; match ')'
-                         ((#\) . cs'') 
-                          (make-parsed (parsed-value result)
-                                       cs''))
-                         ;; failed to match ')'
-                         (_ #f)))
-                ;; failed to match Additive
-                #f)))
-          ;; match decimal
-          (_ (decimal cs))))
 
+(define (primary loc)
+  (define (match-end p)
+    (match (parsed-rest p)
+      [(#\) . loc') (successful-parsed (parsed-value p)
+                                (cdr (parsed-rest p)))]
+      [_  (make-failure "Failed to match )")]))
+  (define (match-rest loc)
+    (>>= (additive loc)
+         match-end))
+  (case (car loc)
+    [(#\() (match-rest (cdr loc))]
+    [else  (decimal loc)]))  
+
+
+;; (listof Character) -> Result
 ;; MultiSuffix <- '*' Primary MultiSuffix
 ;;              / '/' Primary MultiSuffix
 ;;              / ()
-;; multi-suffix : list-of-characters -> result
-(define (multi-suffix cs)
-  (match cs
-         ;; match '*' and call primary
-         ((#\* . cs')
-          (let ((result-right (primary cs')))
-            ;; Primary match? and call multi-suffix
-            (if (parsed? result-right)
-                (let ((result-stuff (multi-suffix (parsed-rest result-right))))
-                  ;; MultiSuffix match?
-                  (if (parsed? result-stuff)
-                      (let ((vright (parsed-value result-right))
-                            (vstuff (parsed-value result-stuff)))
-                        ;; return a lambda of results
-                        (make-parsed (lambda (vleft)
-                                       (vstuff (* vleft vright)))
-                                     (parsed-rest result-stuff)))
-                      ;; failed to match MultiSuffix
-                      #f))
-                ;; failed to match Primary
-                #f)))
-         ;; match '/' and call primary
-         ((#\/ . cs') 
-          (let ((result-right (primary cs')))
-            ;; Primary matched?
-            (if (parsed? result-right)
-                (let ((result-stuff (multi-suffix (parsed-rest result-right))))
-                  ;; MultiSuffix matched?
-                  (if (parsed? result-stuff)
-                      (let ((vright (parsed-value result-right))
-                            (vstuff (parsed-value result-stuff)))
-                        ;; return a lambda of results
-                        (make-parsed (lambda (vleft)
-                                       (vstuff (/ vleft vright)))
-                                     (parsed-rest result-stuff)))
-                      ;; failed to match MultiSuffix
-                      #f))
-                ;; failed to match Primary
-                #f)))
-         ;; identity function v -> v
-         (_ (make-parsed identity cs))))
+(define (multi-suffix loc)
+  (define (match-primary op loc)
+    (>>= (primary loc)
+         (lambda (right)
+           (>>= (multi-suffix (parsed-rest right))
+                (lambda (rest)
+                  (successful-parsed 
+                   (lambda (left)
+                     ((parsed-value rest) (op left 
+                                              (parsed-value right))))
+                   (parsed-rest rest)))))))
+  (match loc
+    [(#\* . loc') (match-primary * loc')]
+    [(#\/ . loc') (match-primary / loc')]
+    [_            (successful-parsed identity loc)]))
 
+;; (listof Character) -> Result
 ;; Multiplicative <- Primary MultiSuffix
-(define (multi cs)
-  ;; call primary
-  (let ((result (primary cs)))
-    ;; Primary match?
-    (cond ((parsed? result)
-           ;; call multi-suffix
-           (let ((result' (multi-suffix (parsed-rest result))))
-             ;; multi-suffix match?
-             (cond ((parsed? result')
-                    (let ((vleft (parsed-value result))
-                          (vstuff (parsed-value result'))
-                          (vrest (parsed-rest result')))
-                      ;; apply multi-suffix value to primary value
-                      (make-parsed (vstuff vleft) vrest)))
-                   ;; failed to match multi-suffix
-                   (else #f))))
-          ;; failed to match primary
-          (else #f))))
+(define (multi loc)
+  (>>= (primary loc)
+       (lambda (p)
+         (>>= (multi-suffix (parsed-rest p))
+              (lambda (ms)
+                (successful-parsed ((parsed-value ms)
+                                    (parsed-value p))
+                                   (parsed-rest ms)))))))
 
+
+;; (listof Character) -> Result
 ;; AdditiveSuffix <- '+' Multiplicative AdditiveSuffix
 ;;                 / '-' Multiplicative AdditiveSuffix
 ;;                 / ()
-(define (add-suffix cs)
-  (match cs
-         ;; match '+' and call multi
-         ((#\+ . cs') 
-          (let ((result-right (multi cs')))
-            ;; Multiplicative match? and call add-suffix
-            (cond ((parsed? result-right)
-                   (let ((result-stuff (add-suffix (parsed-rest result-right))))
-                     ;; AdditiveSuffix match?
-                     (cond ((parsed? result-stuff)
-                            (let ((vright (parsed-value result-right))
-                                  (vstuff (parsed-value result-stuff)))
-                              ;; return a lambda of results
-                              (make-parsed (lambda (vleft)
-                                             (vstuff (+ vleft vright)))
-                                           (parsed-rest result-stuff))))
-                           ;; failed to match AdditiveSuffix
-                           (else #f))))
-                  ;; failed to match Multiplicative
-                  (else #f))))
-         ;; match '-' and call multi
-         ((#\- . cs') 
-          (let ((result-right (multi cs')))
-            ;; Multiplicative matched?
-            (cond ((parsed? result-right)
-                   (let ((result-stuff (add-suffix (parsed-rest result-right))))
-                     ;; AdditiveSuffix matched?
-                     (cond ((parsed? result-stuff)
-                            (let ((vright (parsed-value result-right))
-                                  (vstuff (parsed-value result-stuff)))
-                              ;; return a lambda of results
-                              (make-parsed (lambda (vleft)
-                                             (vstuff (- vleft vright)))
-                                           (parsed-rest result-stuff))))
-                           ;; failed to match AdditiveSuffix
-                           (else #f))))
-                  ;; failed to match Multiplicative
-                  (else #f))))
-         ;; identity function v -> v
-         (_ (make-parsed identity cs))))
+(define (add-suffix loc)
+  (define (match-primary op loc)
+    (>>= (multi loc)
+         (lambda (right)
+           (>>= (add-suffix (parsed-rest right))
+                (lambda (rest)
+                  (successful-parsed 
+                   (lambda (left)
+                     ((parsed-value rest) (op left 
+                                              (parsed-value right))))
+                   (parsed-rest rest)))))))
+  (match loc
+    [(#\+ . loc') (match-primary + loc')]
+    [(#\- . loc') (match-primary - loc')]
+    [_            (successful-parsed identity loc)]))
+
 
 ;; (listof Character) -> Result
 ;; combines a Multiplicative and AdditiveSuffix
 ;; Additive <- Multiplicative AdditiveSuffix
-
 (define (additive loc)
-  (define (combine v r)
-    (cond [(parsed? r)
-           (make-parsed ((parsed-value r) v)
-                        (parsed-rest r))]
-          [else #f]))
-  (define (call-add-suffix r)
-    (cond [(parsed? r) 
-           (combine (parsed-value r) 
-                    (add-suffix (parsed-rest r)))]
-          [else #f]))
-  (call-add-suffix (multi loc)))
+  (>>= (multi loc)
+       (lambda (m)
+         (>>= (add-suffix (parsed-rest m))
+              (lambda (as)
+                (successful-parsed ((parsed-value as)
+                                    (parsed-value m))
+                                   (parsed-rest as)))))))
 
 (define (parse-expr input)
   (let ((result (additive (string->list input))))
-    (cond [(parsed? result)
-           (display (parsed-value result))]
-          [else (display "Bad input")]))
+    (cond [(success? result) (display (parsed-value (success-value result)))]
+          [else (display (failure-value result))]))
   (newline))
