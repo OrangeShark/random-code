@@ -53,10 +53,25 @@
   (cond [(success? r) (fn (success-value r))]
         [else         r]))
 
+(define (return x)
+  (make-success x))
 
+(define-syntax my-do
+  (syntax-rules (<-)
+    [(my-do (x <- expr) rest ...)
+     (>>= expr
+          (lambda (x)
+            (my-do rest ...)))]
+    [(my-do expr)
+     expr]))
 
 (define (successful-parsed v rest)
   (make-success (make-parsed v rest)))
+
+(define (combine-expr rest op right)
+  (lambda (left)
+    ((parsed-value rest) (op left
+                             (parsed-value right)))))
 
   ;; Decimal <- '0' | ... | '9'
   ;; decimal : (listof Character) -> Result
@@ -100,15 +115,11 @@
 ;;              / ()
 (define (multi-suffix loc)
   (define (match-primary op loc)
-    (>>= (primary loc)
-         (lambda (right)
-           (>>= (multi-suffix (parsed-rest right))
-                (lambda (rest)
-                  (successful-parsed 
-                   (lambda (left)
-                     ((parsed-value rest) (op left 
-                                              (parsed-value right))))
-                   (parsed-rest rest)))))))
+    (my-do (right <- (primary loc))
+           (rest  <- (multi-suffix (parsed-rest right)))
+           (return (make-parsed
+                    (combine-expr rest op right)
+                    (parsed-rest rest)))))
   (match loc
     [(#\* . loc') (match-primary * loc')]
     [(#\/ . loc') (match-primary / loc')]
@@ -117,14 +128,10 @@
 ;; (listof Character) -> Result
 ;; Multiplicative <- Primary MultiSuffix
 (define (multi loc)
-  (>>= (primary loc)
-       (lambda (p)
-         (>>= (multi-suffix (parsed-rest p))
-              (lambda (ms)
-                (successful-parsed ((parsed-value ms)
-                                    (parsed-value p))
-                                   (parsed-rest ms)))))))
-
+  (my-do (p  <-  (primary loc))
+         (ms <-  (multi-suffix (parsed-rest p)))
+         (return (make-parsed ((parsed-value ms) (parsed-value p))
+                              (parsed-rest ms)))))
 
 ;; (listof Character) -> Result
 ;; AdditiveSuffix <- '+' Multiplicative AdditiveSuffix
@@ -132,15 +139,11 @@
 ;;                 / ()
 (define (add-suffix loc)
   (define (match-primary op loc)
-    (>>= (multi loc)
-         (lambda (right)
-           (>>= (add-suffix (parsed-rest right))
-                (lambda (rest)
-                  (successful-parsed 
-                   (lambda (left)
-                     ((parsed-value rest) (op left 
-                                              (parsed-value right))))
-                   (parsed-rest rest)))))))
+    (my-do (right <- (multi loc))
+           (rest  <- (add-suffix (parsed-rest right)))
+           (return (make-parsed
+                    (combine-expr rest op right)
+                    (parsed-rest rest)))))
   (match loc
     [(#\+ . loc') (match-primary + loc')]
     [(#\- . loc') (match-primary - loc')]
@@ -151,13 +154,11 @@
 ;; combines a Multiplicative and AdditiveSuffix
 ;; Additive <- Multiplicative AdditiveSuffix
 (define (additive loc)
-  (>>= (multi loc)
-       (lambda (m)
-         (>>= (add-suffix (parsed-rest m))
-              (lambda (as)
-                (successful-parsed ((parsed-value as)
-                                    (parsed-value m))
-                                   (parsed-rest as)))))))
+  (my-do (m  <- (multi loc))
+         (as <- (add-suffix (parsed-rest m)))
+         (return (make-parsed ((parsed-value as)
+                               (parsed-value m))
+                              (parsed-rest as)))))
 
 (define (parse-expr input)
   (let ((result (additive (string->list input))))
